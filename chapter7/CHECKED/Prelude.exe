@@ -1,0 +1,144 @@
+{-
+ - LETREC/Prelude.hs
+ -
+ -  Reference implementation of the toy language LETREC by Mitchell Wand.
+ -  This module provides a standard library of pre-defined functions.
+ -
+ -  Author: Matthew A Johnson
+ -}
+module LETREC.Prelude (prelude) where
+
+import LETREC.Environment
+import LETREC.Parser
+import LETREC.Interp
+
+type Var = String
+type Src = String
+type Def = (Var,Src)
+
+prelude_src :: [Def]
+prelude_src = [
+    {- Insert new definitions here at the head of the list -}
+    ("flip",    "proc (f) proc (x) proc (y) ((f y) x)"),
+    {- Issue #65 -}
+    ("until",   "proc (test) proc (update) \
+                    \letrec f (init) = \
+                        \if (test init) then (f (update init)) else init \
+                    \in f"),
+    {- Issue #62 -}
+    ("filter",  "letrec filter (pred) = proc (xs) \
+                    \if null?(xs) then emptylist \
+                    \else let ys = ((filter pred) cdr(xs)) \
+                         \in let y = car(xs) \
+                            \in if (pred y) then cons(y,ys) \
+                               \else ys \
+                \in filter"),
+    {- Issue #61 -}
+    ("map",     "letrec map (f) = proc (xs) \
+                    \if null?(xs) then emptylist \
+                    \else cons((f car(xs)),((map f) cdr(xs))) \
+                \in map"),
+    {- Issue #60 -}
+    ("reverse", "letrec rev (rsf) = proc (xs) \
+                    \if null?(xs) then rsf \
+                    \else ((rev cons(car(xs),rsf)) cdr(xs)) \
+                \in (rev emptylist)"),
+    {- Issue #59 -}
+    ("append",  "letrec append (xs) = proc (ys) \
+                    \if null?(xs) then ys \
+                    \else cons(car(xs),((append cdr(xs)) ys)) \
+                \in append"),
+    {- Issue #58 -}
+    ("elem-at", "letrec elemat (xs) = proc (i) \
+                    \if zero?(i) then car(xs) \
+                    \else ((elemat cdr(xs)) -(i,1)) \
+                \in elemat"),
+    {- Issue #57 -}
+    ("index-of","letrec helper (i) = proc (y) proc (xs) \
+                    \if null?(xs) then -1 \
+                    \else if zero?(-(y,car(xs))) then i \
+                    \else (((helper -(i,-(0,1))) y) cdr(xs)) \
+                \in proc (y) proc (xs) (((helper 0) y) xs)"),
+    {- Issue #56 -}
+    ("take",    "letrec take (n) = proc (xs) \
+                     \if null?(xs) then xs \
+                     \else if zero?(n) then emptylist \
+                          \else cons(car(xs),((take -(n,1)) cdr(xs))) \
+                \in take"),
+    {- Issue #55 -}
+    ("drop",    "letrec drop (n) = proc (xs) \
+                     \if null?(xs) then xs \
+                     \else if zero?(n) then xs \
+                          \else ((drop -(n,1)) cdr(xs)) \
+                \in drop"),
+    {- Issue #54 -}
+    ("length",  "letrec len (xs) = if null?(xs) then 0 \
+                                  \else -((len cdr(xs)),-(0,1)) \
+                \in len"),
+    {- Issue #53 -}
+    ("xor",     "proc (p) proc (q) if p then if q then zero?(1) \
+                                            \else zero?(0) \
+                                  \else y"),
+    ("nand",    "proc (p) proc (q) if p then if q then zero?(1) \
+                                            \else zero?(0) \
+                                  \else zero?(0)"),
+    {- Issue #52 -}
+    ("or",      "proc (p) proc (q) if p then p else q"),
+    ("and",     "proc (p) proc (q) if p then q else p"),
+    {- Issue #51 -}
+    ("not",     "proc (x) if x then zero?(1) else zero?(0)"),
+    ("false",   "zero?(1)"),
+    ("true",    "zero?(0)"),
+    {- Issue #50 -}
+    ("gte?",    "proc (x) proc (y) if neg?(-(x,y)) then zero?(1) \
+                                  \else zero?(0)"),
+    ("lte?",    "proc (x) proc (y) if neg?(-(y,x)) then zero?(1) \
+                                  \else zero?(0)"),
+    ("gt?",     "proc (x) proc (y) if neg?(-(y,x)) then zero?(0) \
+                                  \else zero?(1)"),
+    ("lt?",     "proc (x) proc (y) if neg?(-(x,y)) then zero?(0) \
+                                  \else zero?(1)"),
+    {- Issue #49 -}
+    ("not-eq?", "proc (x) proc (y) if zero?(-(x,y)) \
+                                     \then zero?(1) else zero?(0)"),
+    ("eq?",     "proc (x) proc (y) zero?(-(x,y))"),
+    {- Issue #74 -}
+    ("pow",     "letrec pow (x) = proc (n) \
+                    \if zero?(n) then 1 \
+                    \else ((times x) ((pow x) -(n,1))) \
+                \in pow"),
+    {- Issue #48 -}
+    ("rem",     "letrec rem (x) = proc (y) \
+                    \let r = -(x,y) \
+                    \in if neg?(r) then x \
+                       \else ((rem r) y) \
+                \in rem"),
+    {- Issue #47 -}
+    ("quot",    "letrec quot (x) = proc (y) \
+                    \let r = -(x,y) \
+                    \in if neg?(r) then 0 \
+                       \else -(((quot r) y),-(0,1)) \
+                \in quot"),
+    {- Issue #46 -}
+    ("times",   "proc (x) proc (y) \
+                    \let y = if neg?(x) then -(0,y) else y \
+                    \in let x = if neg?(x) then -(0,x) else x \
+                       \in letrec times (x) = proc (y) \
+                              \if zero?(y) then 0 \
+                              \else -(((times -(y,1)) x),-(0,x)) \
+                          \in ((times x) y)"),
+    {- Issue #44 -}
+    ("add",     "proc (x) proc (y) -(x,-(0,y))"),
+    ("minus",   "proc (x) -(0,x)"),
+    {- Sample definitions -}
+    ("twice",   "proc (x) -(x,-(0,x))"),
+    ("incr",    "proc (x) -(x,-(0,1))"),
+    ("decr",    "proc (x) -(x,1)")
+    ]
+
+compile_one :: Env e => Def -> e -> e
+compile_one (name,src) ρ = extend ρ name (interp src ρ)
+
+prelude :: RibcageEnv
+prelude = foldr compile_one (empty :: RibcageEnv) prelude_src
+
